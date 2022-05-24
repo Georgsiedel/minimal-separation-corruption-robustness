@@ -4,37 +4,36 @@ from __future__ import print_function
 
 import pandas as pd
 import os
-os.chdir('C:\\Users\\Admin\\Desktop\\Python\\MSSR')
 import numpy as np
 import matplotlib.pyplot as plt
 from experiments.eval import eval_metric
 
-#from experiments.distance import get_nearest_oppo_dist
-#calculate minimal distance of points from different classes
-#dist = np.inf #1, 2, np.inf
-#traintrain_ret, traintest_ret, testtest_ret = get_nearest_oppo_dist(dist)
-#ret = np.array([[traintrain_ret.min(), traintest_ret.min(), testtest_ret.min()],
-#       [traintrain_ret.mean(), traintest_ret.mean(), testtest_ret.mean()]])
-#df_ret = pd.DataFrame(ret, columns=['Train-Train', 'Train-Test', 'Test-Test'], index=['Minimal Distance', 'Mean Distance'])
-#print(df_ret)
-#epsilon_min = ret[0, :].min()/2
-#print("Epsilon: ", epsilon_min)
+# calculate minimal distance of points from different classes
+# distance measurement by https://github.com/yangarbiter/robust-local-lipschitz
+from experiments.distance import get_nearest_oppo_dist
+dist = np.inf #Lp-Norm to calculate distance
+traintrain_ret, traintest_ret, testtest_ret = get_nearest_oppo_dist(dist)
+ret = np.array([[traintrain_ret.min(), traintest_ret.min(), testtest_ret.min()],
+       [traintrain_ret.mean(), traintest_ret.mean(), testtest_ret.mean()]])
+df_ret = pd.DataFrame(ret, columns=['Train-Train', 'Train-Test', 'Test-Test'], index=['Minimal Distance', 'Mean Distance'])
+print(df_ret)
+epsilon_min = ret[0, :].min()/2
+print("Epsilon: ", epsilon_min)
 
 #select max.-distance of random perturbations for model training and evaluation
-epsilon_min = 0.10588236153125763
-#model_epsilons = [0.0, 0.01, 0.02, 0.03, 0.05, 0.07, epsilon_min, 0.15] #CIFAR-10 epsilon_min value is 0.10588236153125763
-#eval_epsilons = [0.0, 0.005, 0.01, 0.015, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.1, epsilon_min, 0.125, 0.15, 0.175, 0.2]
-model_epsilons = [0.0, 0.005, 0.01, 0.015, 0.02] #CIFAR-10 epsilon_min value is 0.10588236153125763
-eval_epsilons = [0.0, 0.005]
+#epsilon_min = 0.10588236153125763
+model_epsilons = [0.0, 0.01, 0.02, 0.03, 0.05, 0.07, epsilon_min, 0.15] #CIFAR-10 epsilon_min value is 0.10588236153125763
+eval_epsilons = [0.0, 0.005, 0.01, 0.015, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.1, epsilon_min, 0.125, 0.15, 0.175, 0.2]
 model_epsilons_str = ', '.join(map(str, model_epsilons))
 eval_epsilons_str = ', '.join(map(str, eval_epsilons))
 
-runs = 16
+runs = 20
 
-# Train network on CIFAR-10 for natural training, two versions of corruption training, and PGD adversarial training.
-# Progressively smaller learning rates are used over training
-print('Beginning training of Wide ResNet networks on CIFAR-10')
-for run in range(0, 16):
+# Train network on CIFAR-10 for natural training and all versions of corruption training defined in the "model_epsilons" above
+# 3 Steps of decreasing learning rates are used over training
+# Training and Evaluation Code adopted from https://github.com/wangben88/statistically-robust-nn-classification
+print('Beginning training of Wide ResNet 28/10 networks on CIFAR-10')
+for run in range(0, 20):
     print("Training run #", run)
     for train_epsilon in model_epsilons:
         print("Corruption training epsilon: ", train_epsilon)
@@ -48,19 +47,23 @@ for run in range(0, 16):
         os.system(cmd1)
         os.system(cmd2)
 
-# Calculate metrics (A-TSRM and adv. accuracy), evaluating each trained network on each metric
+# Calculate metrics (Robust Accuracy, MSCR value), evaluating each trained network on each metric
 print('Beginning metric evaluation')
-# Evaluation on train/test set respectively
+
+#arrays to save all test metrics
 all_test_metrics = np.empty([len(eval_epsilons), len(model_epsilons), runs])
 all_mscr = np.empty([len(model_epsilons), runs])
 std_mscr = np.empty(len(model_epsilons))
-all_dif = np.empty([4, runs])
-all_avg = np.empty([4])
-all_std = np.empty([4])
 avg_test_metrics = np.empty([len(eval_epsilons), len(model_epsilons)])
 std_test_metrics = np.empty([len(eval_epsilons), len(model_epsilons)])
 max_test_metrics = np.empty([len(eval_epsilons), len(model_epsilons)])
 
+#arrays to save 2 pairwise difference tests between two results
+#all_dif = np.empty([2, runs])
+#avg_dif = np.empty([2])
+#std_dif = np.empty([2])
+
+#arrays to save a series of metrics for visualization
 #acc1 = np.empty(runs)
 #acc_series1 = np.empty(runs)
 
@@ -79,9 +82,7 @@ for run in range(runs):
 
     all_test_metrics[:len(eval_epsilons), :len(model_epsilons), run] = test_metrics
     all_dif[0, run] = all_test_metrics[0, 1, run] - all_test_metrics[0, 0, run]
-    all_dif[1, run] = all_test_metrics[0, 3, run] - all_test_metrics[0, 0, run]
-    all_dif[2, run] = all_test_metrics[1, 1, run] - all_test_metrics[1, 0, run]
-    all_dif[3, run] = all_test_metrics[1, 3, run] - all_test_metrics[1, 0, run]
+    all_dif[1, run] = all_test_metrics[0, 2, run] - all_test_metrics[0, 0, run]
 
     #    acc1[run] = test_metrics[0, 0]
 #    acc_series1[run] = acc1[:run+1].mean()
@@ -99,16 +100,13 @@ for idm, model_epsilon in enumerate(model_epsilons):
         std_test_metrics[ide, idm] = all_test_metrics[ide, idm, :runs].std()
         max_test_metrics[ide, idm] = all_test_metrics[ide, idm, :runs].max()
 
-all_std[0] = all_dif[0,:].std()
-all_avg[0] = all_dif[0,:].mean()
-all_std[1] = all_dif[1,:].std()
-all_avg[1] = all_dif[1,:].mean()
-all_std[2] = all_dif[2,:].std()
-all_avg[2] = all_dif[2,:].mean()
-all_std[3] = all_dif[3,:].std()
-all_avg[3] = all_dif[3,:].mean()
-print(all_avg)
-print(all_std)
+std_dif[0] = all_dif[0,:].std()
+avg_dif[0] = all_dif[0,:].mean()
+std_dif[1] = all_dif[1,:].std()
+avg_dif[1] = all_dif[1,:].mean()
+print(avg_dif)
+print(std_dif)
+
 #print(acc1)
 #print(acc1.std())
 #x1 = list(range(1, runs + 1))
