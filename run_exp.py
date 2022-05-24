@@ -31,7 +31,7 @@ runs = 20
 
 # Train network on CIFAR-10 for natural training and all versions of corruption training defined in the "model_epsilons" above
 # 3 Steps of decreasing learning rates are used over training
-# Training and Evaluation Code adopted from https://github.com/wangben88/statistically-robust-nn-classification
+# Training and Evaluation Code and Network architecture adopted from https://github.com/wangben88/statistically-robust-nn-classification
 print('Beginning training of Wide ResNet 28/10 networks on CIFAR-10')
 for run in range(0, 20):
     print("Training run #", run)
@@ -71,7 +71,7 @@ for run in range(runs):
     print("Metric evaluation for training run #", run)
     test_metrics = np.empty([len(eval_epsilons), len(model_epsilons)])
 
-    # Corruption training, A-TRSM evaluation
+    # Evaluate all models on all eval_epsilons with "eval_metric" function
     for idx, train_epsilon in enumerate(model_epsilons):
         print("Corruption training epsilon: ", train_epsilon, ", Evaluate on A-TSRM epsilons: ", eval_epsilons_str)
         filename = './experiments/models/cifar_epsilon_{}_run_{}.pth'.format(train_epsilon, run)
@@ -81,17 +81,18 @@ for run in range(runs):
         #all_mscr[idx, run] = (np.array(test_metric_col)[13] - np.array(test_metric_col)[0]) / np.array(test_metric_col)[0]
 
     all_test_metrics[:len(eval_epsilons), :len(model_epsilons), run] = test_metrics
+    #pairwise comparison of two values   
     all_dif[0, run] = all_test_metrics[0, 1, run] - all_test_metrics[0, 0, run]
     all_dif[1, run] = all_test_metrics[0, 2, run] - all_test_metrics[0, 0, run]
-
-    #    acc1[run] = test_metrics[0, 0]
-#    acc_series1[run] = acc1[:run+1].mean()
-
-    np.savetxt(
-        './results/cifar10_metrics_test_run_{}.csv'.format(
-        run), test_metrics, fmt='%1.3f', delimiter=';', header='Networks trained with'
-        ' corruptions (epsilon = {}) along columns THEN evaluated on test set using A-TRSM (epsilon = {}) '
-        ' along rows'.format(model_epsilons_str, eval_epsilons_str, ))
+    #save a series of means of accuracies over the runs for visualization of convergence
+    #acc1[run] = test_metrics[0, 0]
+#acc_series1[run] = acc1[:run+1].mean()
+    
+    #np.savetxt(
+    #    './results/cifar10_metrics_test_run_{}.csv'.format(
+    #    run), test_metrics, fmt='%1.3f', delimiter=';', header='Networks trained with'
+    #    ' corruptions (epsilon = {}) along columns THEN evaluated on test set using A-TRSM (epsilon = {}) '
+    #    ' along rows'.format(model_epsilons_str, eval_epsilons_str, ))
 
 for idm, model_epsilon in enumerate(model_epsilons):
     #std_mscr[idm] = all_mscr[idm, :].std()
@@ -100,6 +101,7 @@ for idm, model_epsilon in enumerate(model_epsilons):
         std_test_metrics[ide, idm] = all_test_metrics[ide, idm, :runs].std()
         max_test_metrics[ide, idm] = all_test_metrics[ide, idm, :runs].max()
 
+#mean and standard deviation for the pairwise statistical comparison to evaluate statistical significance in detail       
 std_dif[0] = all_dif[0,:].std()
 avg_dif[0] = all_dif[0,:].mean()
 std_dif[1] = all_dif[1,:].std()
@@ -107,6 +109,7 @@ avg_dif[1] = all_dif[1,:].mean()
 print(avg_dif)
 print(std_dif)
 
+#visualization of convergence over runs
 #print(acc1)
 #print(acc1.std())
 #x1 = list(range(1, runs + 1))
@@ -118,6 +121,7 @@ print(std_dif)
 #plt.legend(["train&test e = 0"], loc='right')
 #plt.show()
 
+#save all results
 np.savetxt(
     './results/cifar10_metrics_test_avg.csv',
     avg_test_metrics, fmt='%1.3f', delimiter=';', header='Networks trained with'
