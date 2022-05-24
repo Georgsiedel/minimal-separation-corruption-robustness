@@ -1,3 +1,5 @@
+# Training and Evaluation Code and Network architecture inspired/adopted from https://github.com/wangben88/statistically-robust-nn-classification
+
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -9,7 +11,7 @@ import matplotlib.pyplot as plt
 from experiments.eval import eval_metric
 
 # calculate minimal distance of points from different classes
-# distance measurement by https://github.com/yangarbiter/robust-local-lipschitz
+# distance measurement inspired by https://github.com/yangarbiter/robust-local-lipschitz
 from experiments.distance import get_nearest_oppo_dist
 dist = np.inf #Lp-Norm to calculate distance
 traintrain_ret, traintest_ret, testtest_ret = get_nearest_oppo_dist(dist)
@@ -31,7 +33,6 @@ runs = 20
 
 # Train network on CIFAR-10 for natural training and all versions of corruption training defined in the "model_epsilons" above
 # 3 Steps of decreasing learning rates are used over training
-# Training and Evaluation Code and Network architecture adopted from https://github.com/wangben88/statistically-robust-nn-classification
 print('Beginning training of Wide ResNet 28/10 networks on CIFAR-10')
 for run in range(0, 20):
     print("Training run #", run)
