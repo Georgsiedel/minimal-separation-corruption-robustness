@@ -25,12 +25,14 @@ x_min = torch.tensor([0, 0, 0]).to(device).view([1, -1, 1, 1])
 x_max = torch.tensor([1, 1, 1]).to(device).view([1, -1, 1, 1])
 
 def compute_metric(loader, net, epsilon, adv):
-    """ Calculate A-TSRM"""
+    #evaluate robust accuracy on data corrupted by random uniform noise
     net.eval()
     correct = 0
     total = 0
+    
     for batch_idx, (inputs, targets) in enumerate(loader):
         inputs, targets = inputs.to(device), targets.to(device)
+        #this adds random uniform noise to every data point (L_inf-norm)
         if epsilon != 0:
             inputs_dist = dist.Uniform(low=torch.max(inputs - epsilon, x_min), high=torch.min(inputs + epsilon, x_max))
             inputs_pert = inputs_dist.sample().to(device)
@@ -49,11 +51,8 @@ def compute_metric(loader, net, epsilon, adv):
     
 
 def eval_metric(modelfilename, eval_epsilons, adv=False, train=False):
-    test_transforms=transforms.Compose([transforms.ToTensor()#, #transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
+    test_transforms=transforms.Compose([transforms.ToTensor()#, transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
                                         ])
-    test_loader_c = torch.utils.data.DataLoader(
-        './experiments/data/cifar-10-c',
-        batch_size=1024, shuffle=False)
     
     test_loader = torch.utils.data.DataLoader(
         datasets.CIFAR10('./experiments/data', train=False, download=True, transform=test_transforms),
