@@ -17,6 +17,7 @@ import torchvision.transforms as transforms
 
 from experiments.network import WideResNet
 
+#parser arguments from run_exp.py
 parser = argparse.ArgumentParser(description='PyTorch CIFAR10 Training with perturbations')
 parser.add_argument('--lr', default=0.1, type=float, help='learning rate')
 parser.add_argument('--resume', '-r', action='store_true', help='resume from checkpoint')
@@ -34,6 +35,7 @@ classes = ('plane', 'car', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship'
 x_min = torch.tensor([0, 0, 0]).to(device).view([1, -1, 1, 1])
 x_max = torch.tensor([1, 1, 1]).to(device).view([1, -1, 1, 1])
 print(os.getcwd())
+
 def train(pbar):
     """ Perform epoch of training"""
     net.train()
@@ -43,7 +45,7 @@ def train(pbar):
     for batch_idx, (inputs, targets) in enumerate(trainloader):
         inputs, targets = inputs.to(device), targets.to(device)
         optimizer.zero_grad()
-
+        #this add random uniform noise of max-level args.epsilon to data points
         if args.epsilon != 0:
             inputs_dist = dist.Uniform(low=torch.max(inputs - args.epsilon, x_min), high=torch.min(inputs + args.epsilon, x_max))
             inputs_pert = inputs_dist.sample().to(device)
@@ -102,6 +104,7 @@ def test(pbar):
 if __name__ == '__main__':
     # Load and transform data
     print('Preparing data..')
+    #training data are transformed with random crops and random horizontal flips
     transform_train = transforms.Compose([
         transforms.RandomCrop(32, padding=4),
         transforms.RandomHorizontalFlip(),
@@ -115,10 +118,10 @@ if __name__ == '__main__':
     ])
 
     trainset = torchvision.datasets.CIFAR10(root='./experiments/data', train=True, download=True, transform=transform_train)
-    trainloader = torch.utils.data.DataLoader(trainset, batch_size=32, shuffle=True)    #, num_workers=2)
+    trainloader = torch.utils.data.DataLoader(trainset, batch_size=32, shuffle=True)
 
     testset = torchvision.datasets.CIFAR10(root='./experiments/data', train=False, download=True, transform=transform_test)
-    testloader = torch.utils.data.DataLoader(testset, batch_size=10, shuffle=False) #, num_workers=2)
+    testloader = torch.utils.data.DataLoader(testset, batch_size=10, shuffle=False)
 
     # Construct model
     print('\nBuilding model..')
