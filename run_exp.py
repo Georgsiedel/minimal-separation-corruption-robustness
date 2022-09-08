@@ -1,3 +1,6 @@
+# Training and Evaluation Code and Network architecture inspired/adopted from https://github.com/wangben88/statistically-robust-nn-classification
+# and https://github.com/yangarbiter/robust-local-lipschitz
+
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -9,9 +12,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 from experiments.eval import eval_metric
 
-#import pandas as pd
-#from experiments.distance import get_nearest_oppo_dist
 #calculate minimal distance of points from different classes
+import pandas as pd
+from experiments.distance import get_nearest_oppo_dist
 #dist = np.inf #1, 2, np.inf
 #traintrain_ret, traintest_ret, testtest_ret = get_nearest_oppo_dist(dist)
 #ret = np.array([[traintrain_ret.min(), traintest_ret.min(), testtest_ret.min()], [traintrain_ret.mean(), traintest_ret.mean(), testtest_ret.mean()]])
