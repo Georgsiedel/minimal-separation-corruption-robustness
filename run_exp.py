@@ -1,70 +1,72 @@
-# Training and Evaluation Code and Network architecture inspired/adopted from https://github.com/wangben88/statistically-robust-nn-classification
-
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
-
-import pandas as pd
 import os
+import sys
+os.chdir('C:\\Users\\Admin\\Desktop\\Python\\MSCR')
+
 import numpy as np
 import matplotlib.pyplot as plt
 from experiments.eval import eval_metric
 
-# calculate minimal distance of points from different classes
-# distance measurement inspired by https://github.com/yangarbiter/robust-local-lipschitz
-from experiments.distance import get_nearest_oppo_dist
-dist = np.inf #Lp-Norm to calculate distance
-traintrain_ret, traintest_ret, testtest_ret = get_nearest_oppo_dist(dist)
-ret = np.array([[traintrain_ret.min(), traintest_ret.min(), testtest_ret.min()],
-       [traintrain_ret.mean(), traintest_ret.mean(), testtest_ret.mean()]])
-df_ret = pd.DataFrame(ret, columns=['Train-Train', 'Train-Test', 'Test-Test'], index=['Minimal Distance', 'Mean Distance'])
-print(df_ret)
-epsilon_min = ret[0, :].min()/2
-print("Epsilon: ", epsilon_min)
+#import pandas as pd
+#from experiments.distance import get_nearest_oppo_dist
+#calculate minimal distance of points from different classes
+#dist = np.inf #1, 2, np.inf
+#traintrain_ret, traintest_ret, testtest_ret = get_nearest_oppo_dist(dist)
+#ret = np.array([[traintrain_ret.min(), traintest_ret.min(), testtest_ret.min()], [traintrain_ret.mean(), traintest_ret.mean(), testtest_ret.mean()]])
+#df_ret = pd.DataFrame(ret, columns=['Train-Train', 'Train-Test', 'Test-Test'], index=['Minimal Distance', 'Mean Distance'])
+#print(df_ret)
+#epsilon_min = ret[0, :].min()/2
+#print("Epsilon: ", epsi lon_min)
+epsilon_min = 0.10588236153125763 #CIFAR-10 epsilon_min_Linf value is 0.10588236153125763, epsilon_min_L2 is 1.3753206729888916 and epsilon_min_L1 is 32.93333053588867.
+
+noise_type = 'uniform-linf' #define noise type: 'gaussian', 'uniform-l2', 'uniform-linf'
+if noise_type not in ['gaussian', 'uniform-l2', 'uniform-linf']:
+    sys.exit('Unknown type of noise')
 
 #select max.-distance of random perturbations for model training and evaluation
-#epsilon_min = 0.10588236153125763
-model_epsilons = [0.0, 0.01, 0.02, 0.03, 0.05, 0.07, epsilon_min, 0.15] #CIFAR-10 epsilon_min value is 0.10588236153125763
-eval_epsilons = [0.0, 0.005, 0.01, 0.015, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.1, epsilon_min, 0.125, 0.15, 0.175, 0.2]
+#For uniform distributions, epsilon is the maximum noise distance.
+#For Linf, epsilon * 255 is the maximum color change of channel of any pixel.
+#For intuition: For L2, epsilon = 0,217 corresponds to either 1/255 color change for every channel and every pixel
+#or a 55/255 color change on one pixel (or something in between according to euclidian distance)
+#For 'gaussian', it is the standard deviation of the noise distribution (converted to variance in train.py)
+model_epsilons = [0.0, 0.005, 0.01, 0.015, 0.02]
+eval_epsilons = [0.0, 0.005, 0.01, 0.015, 0.02, 0.03, 0.10588236153125763]
 model_epsilons_str = ', '.join(map(str, model_epsilons))
 eval_epsilons_str = ', '.join(map(str, eval_epsilons))
+runs = 50
 
-runs = 20
-
-# Train network on CIFAR-10 for natural training and all versions of corruption training defined in the "model_epsilons" above
-# 3 Steps of decreasing learning rates are used over training
-print('Beginning training of Wide ResNet 28/10 networks on CIFAR-10')
-for run in range(0, 20):
+# Train network on CIFAR-10 for natural training, two versions of corruption training, and PGD adversarial training.
+# Progressively smaller learning rates are used over training
+print('Beginning training of Wide ResNet networks on CIFAR-10')
+for run in range(0, 50):
     print("Training run #", run)
     for train_epsilon in model_epsilons:
         print("Corruption training epsilon: ", train_epsilon)
-        cmd0 = 'python experiments/train.py --epsilon={} --epochs=20 --lr=0.01 --run={}'.format(
-            train_epsilon, run)
-        cmd1 = 'python experiments/train.py --resume --epsilon={} --epochs=5 --lr=0.002 --run={}'.format(
-            train_epsilon, run)
-        cmd2 = 'python experiments/train.py --resume --epsilon={} --epochs=5 --lr=0.0004 --run={}'.format(
-            train_epsilon, run)
+        cmd0 = 'python experiments/train.py --noise={} --epsilon={} --epochs=20 --lr=0.01 --run={}'.format(
+            noise_type, train_epsilon, run)
+        cmd1 = 'python experiments/train.py --resume --noise={} --epsilon={} --epochs=5 --lr=0.002 --run={}'.format(
+            noise_type, train_epsilon, run)
+        cmd2 = 'python experiments/train.py --resume --noise={} --epsilon={} --epochs=5 --lr=0.0004 --run={}'.format(
+            noise_type, train_epsilon, run)
         os.system(cmd0)
         os.system(cmd1)
         os.system(cmd2)
 
-# Calculate metrics (Robust Accuracy, MSCR value), evaluating each trained network on each metric
+# Calculate metrics (A-TSRM and adv. accuracy), evaluating each trained network on each metric
 print('Beginning metric evaluation')
-
-#arrays to save all test metrics
+# Evaluation on train/test set respectively
 all_test_metrics = np.empty([len(eval_epsilons), len(model_epsilons), runs])
 all_mscr = np.empty([len(model_epsilons), runs])
 std_mscr = np.empty(len(model_epsilons))
+all_dif = np.empty([4, runs])
+all_avg = np.empty([4])
+all_std = np.empty([4])
 avg_test_metrics = np.empty([len(eval_epsilons), len(model_epsilons)])
 std_test_metrics = np.empty([len(eval_epsilons), len(model_epsilons)])
 max_test_metrics = np.empty([len(eval_epsilons), len(model_epsilons)])
 
-#arrays to save 2 pairwise difference tests between two results
-#all_dif = np.empty([2, runs])
-#avg_dif = np.empty([2])
-#std_dif = np.empty([2])
-
-#arrays to save a series of metrics for visualization
 #acc1 = np.empty(runs)
 #acc_series1 = np.empty(runs)
 
@@ -72,28 +74,29 @@ for run in range(runs):
     print("Metric evaluation for training run #", run)
     test_metrics = np.empty([len(eval_epsilons), len(model_epsilons)])
 
-    # Evaluate all models on all eval_epsilons with "eval_metric" function
+    # Corruption training, A-TRSM evaluation
     for idx, train_epsilon in enumerate(model_epsilons):
         print("Corruption training epsilon: ", train_epsilon, ", Evaluate on A-TSRM epsilons: ", eval_epsilons_str)
-        filename = './experiments/models/cifar_epsilon_{}_run_{}.pth'.format(train_epsilon, run)
-        test_metric_col = eval_metric(filename, eval_epsilons, adv=False, train=False)
+        filename = './experiments/models/{}/cifar_epsilon_{}_run_{}.pth'.format(noise_type, train_epsilon, run)
+        test_metric_col = eval_metric(filename, eval_epsilons, noise_type, train=False)
         test_metrics[:len(eval_epsilons), idx] = np.array(test_metric_col)
         #mscr: calculated from clean and r-separated testing sets
-        #all_mscr[idx, run] = (np.array(test_metric_col)[13] - np.array(test_metric_col)[0]) / np.array(test_metric_col)[0]
+        #all_mscr[idx, run] = (np.array(test_metric_col)[6] - np.array(test_metric_col)[0]) / np.array(test_metric_col)[0]
 
     all_test_metrics[:len(eval_epsilons), :len(model_epsilons), run] = test_metrics
-    #pairwise comparison of two values   
     all_dif[0, run] = all_test_metrics[0, 1, run] - all_test_metrics[0, 0, run]
     all_dif[1, run] = all_test_metrics[0, 2, run] - all_test_metrics[0, 0, run]
-    #save a series of means of accuracies over the runs for visualization of convergence
-    #acc1[run] = test_metrics[0, 0]
-#acc_series1[run] = acc1[:run+1].mean()
-    
-    #np.savetxt(
-    #    './results/cifar10_metrics_test_run_{}.csv'.format(
-    #    run), test_metrics, fmt='%1.3f', delimiter=';', header='Networks trained with'
-    #    ' corruptions (epsilon = {}) along columns THEN evaluated on test set using A-TRSM (epsilon = {}) '
-    #    ' along rows'.format(model_epsilons_str, eval_epsilons_str, ))
+    all_dif[2, run] = all_test_metrics[0, 3, run] - all_test_metrics[0, 0, run]
+    all_dif[3, run] = all_test_metrics[0, 4, run] - all_test_metrics[0, 0, run]
+
+    #    acc1[run] = test_metrics[0, 0]
+#    acc_series1[run] = acc1[:run+1].mean()
+#
+#    np.savetxt(
+#        './results/cifar10_metrics_test_run_{}.csv'.format(
+#        run), test_metrics, fmt='%1.3f', delimiter=';', header='Networks trained with'
+#        ' corruptions (epsilon = {}) along columns THEN evaluated on test set using A-TRSM (epsilon = {}) '
+#        ' along rows'.format(model_epsilons_str, eval_epsilons_str, ))
 
 for idm, model_epsilon in enumerate(model_epsilons):
     #std_mscr[idm] = all_mscr[idm, :].std()
@@ -102,15 +105,16 @@ for idm, model_epsilon in enumerate(model_epsilons):
         std_test_metrics[ide, idm] = all_test_metrics[ide, idm, :runs].std()
         max_test_metrics[ide, idm] = all_test_metrics[ide, idm, :runs].max()
 
-#mean and standard deviation for the pairwise statistical comparison to evaluate statistical significance in detail       
-std_dif[0] = all_dif[0,:].std()
-avg_dif[0] = all_dif[0,:].mean()
-std_dif[1] = all_dif[1,:].std()
-avg_dif[1] = all_dif[1,:].mean()
-print(avg_dif)
-print(std_dif)
-
-#visualization of convergence over runs
+all_std[0] = all_dif[0,:].std()
+all_avg[0] = all_dif[0,:].mean()
+all_std[1] = all_dif[1,:].std()
+all_avg[1] = all_dif[1,:].mean()
+all_std[2] = all_dif[2,:].std()
+all_avg[2] = all_dif[2,:].mean()
+all_std[3] = all_dif[3,:].std()
+all_avg[3] = all_dif[3,:].mean()
+print(all_avg)
+print(all_std)
 #print(acc1)
 #print(acc1.std())
 #x1 = list(range(1, runs + 1))
@@ -122,26 +126,25 @@ print(std_dif)
 #plt.legend(["train&test e = 0"], loc='right')
 #plt.show()
 
-#save all results
 np.savetxt(
-    './results/cifar10_metrics_test_avg.csv',
+    './results/{}/cifar10_metrics_test_avg.csv'.format(noise_type),
     avg_test_metrics, fmt='%1.3f', delimiter=';', header='Networks trained with'
-    ' corruptions (epsilon = {}) along columns THEN evaluated on test set using A-TRSM (epsilon = {}) '
+    ' corruptions (epsilon = {}) along columns THEN evaluated on test set with corruptions (epsilon = {}) '
     ' along rows'.format(model_epsilons_str, eval_epsilons_str))
 np.savetxt(
-    './results/cifar10_metrics_test_max.csv',
+    './results/{}/cifar10_metrics_test_max.csv'.format(noise_type),
     max_test_metrics, fmt='%1.3f', delimiter=';', header='Networks trained with'
-    ' corruptions (epsilon = {}) along columns THEN evaluated on test set using A-TRSM (epsilon = {}) '
+    ' corruptions (epsilon = {}) along columns THEN evaluated on test set with corruptions (epsilon = {}) '
     ' along rows'.format(model_epsilons_str, eval_epsilons_str))
 np.savetxt(
-    './results/diff.csv',
+    './results/{}/diff.csv'.format(noise_type),
     all_dif, fmt='%1.3f', delimiter=';')
 np.savetxt(
-    './results/cifar10_metrics_test_std.csv',
+    './results/{}/cifar10_metrics_test_std.csv'.format(noise_type),
     std_test_metrics, fmt='%1.4f', delimiter=';', header='Networks trained with'
-    ' corruptions (epsilon = {}) along columns THEN evaluated on test set using A-TRSM (epsilon = {}) '
+    ' corruptions (epsilon = {}) along columns THEN evaluated on test set with corruptions (epsilon = {}) '
     ' along rows'.format(model_epsilons_str, eval_epsilons_str))
-np.savetxt(
-    './results/cifar10_mscr_std.csv',
-    std_mscr, fmt='%1.4f', delimiter=';', header='Networks trained with'
-    ' corruptions (epsilon = {}) along columns'.format(model_epsilons_str))
+#np.savetxt(
+#    './results/{}/cifar10_mscr_std.csv'.format(noise_type),
+#    std_mscr, fmt='%1.4f', delimiter=';', header='Networks trained with'
+#    ' corruptions (epsilon = {}) along columns'.format(model_epsilons_str))
