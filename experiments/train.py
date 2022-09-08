@@ -4,10 +4,11 @@ from __future__ import print_function
 
 import argparse
 from tqdm import tqdm
+from skimage.util import random_noise
+import numpy as np
 import os
 import torch
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
-
 import torch.nn as nn
 import torch.optim as optim
 import torch.backends.cudnn as cudnn
@@ -17,11 +18,11 @@ import torchvision.transforms as transforms
 
 from experiments.network import WideResNet
 
-#parser arguments from run_exp.py
 parser = argparse.ArgumentParser(description='PyTorch CIFAR10 Training with perturbations')
 parser.add_argument('--lr', default=0.1, type=float, help='learning rate')
 parser.add_argument('--resume', '-r', action='store_true', help='resume from checkpoint')
-parser.add_argument('--epsilon', default=0.157, type=float, help='perturbation radius')
+parser.add_argument('--noise', default='gaussian', type=str, help='type of noise')
+parser.add_argument('--epsilon', default=0.1, type=float, help='perturbation radius')
 parser.add_argument('--epochs', default=30, type=int, help="number of epochs")
 parser.add_argument('--run', default=0, type=int, help='run number')
 args = parser.parse_args()
@@ -34,8 +35,6 @@ classes = ('plane', 'car', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship'
 # Bounds without normalization of inputs
 x_min = torch.tensor([0, 0, 0]).to(device).view([1, -1, 1, 1])
 x_max = torch.tensor([1, 1, 1]).to(device).view([1, -1, 1, 1])
-print(os.getcwd())
-
 def train(pbar):
     """ Perform epoch of training"""
     net.train()
@@ -43,15 +42,30 @@ def train(pbar):
     correct = 0
     total = 0
     for batch_idx, (inputs, targets) in enumerate(trainloader):
-        inputs, targets = inputs.to(device), targets.to(device)
         optimizer.zero_grad()
-        #this add random uniform noise of max-level args.epsilon to data points
         if args.epsilon != 0:
-            inputs_dist = dist.Uniform(low=torch.max(inputs - args.epsilon, x_min), high=torch.min(inputs + args.epsilon, x_max))
-            inputs_pert = inputs_dist.sample().to(device)
+            if args.noise == 'uniform-linf':
+                inputs_dist = dist.Uniform(low=torch.max(inputs - args.epsilon, x_min), high=torch.min(inputs + args.epsilon, x_max))
+                inputs_pert = inputs_dist.sample().to(device)
+            elif args.noise == 'gaussian':
+                var = args.epsilon * args.epsilon
+                inputs_pert = torch.tensor(random_noise(inputs, mode='gaussian', mean=0, var=var, clip=True))
+            elif args.noise == 'uniform-l2': #http://extremelearning.com.au/how-to-generate-uniformly-random-points-on-n-spheres-and-n-balls/
+                inputs_pert = inputs
+                for id, img in enumerate(inputs):
+                    d = 32*32*3 # number of dimensions of CIFAR-10 image
+                    u = np.random.normal(0, 1, size=(3, 32, 32))  #an array of d normally distributed random variables
+                    norm = np.sum(u ** 2) ** (0.5) #norm gaussian samples onto sphere
+                    r = np.random.random() ** (1.0 / d) #d-th root to distribute samples from the sphere into the epsilon-size L2-norm-ball
+                    corr = args.epsilon * r * u / norm
+                    noisy_img = img + corr
+                    inputs_pert[id] = np.ma.clip(noisy_img, 0, 1) #clip values below 0 and over 1
+            else:
+                print('Unknown type of noise')
         else:
             inputs_pert = inputs
 
+        inputs_pert, targets = inputs_pert.to(device, dtype=torch.float), targets.to(device)
         targets_pert = targets
         targets_pert_pred = net(inputs_pert)
         
@@ -77,14 +91,28 @@ def test(pbar):
     correct = 0
     total = 0
     for batch_idx, (inputs, targets) in enumerate(testloader):
-        inputs, targets = inputs.to(device), targets.to(device)
 
-        if args.epsilon != 0:
-            inputs_dist = dist.Uniform(low=torch.max(inputs - args.epsilon, x_min), high=torch.min(inputs + args.epsilon, x_max))
-            inputs_pert = inputs_dist.sample().to(device)
-        else:
-            inputs_pert = inputs
+        #if args.epsilon != 0:
+        #    if args.noise == 'uniform-linf':
+        #        inputs_dist = dist.Uniform(low=torch.max(inputs - args.epsilon, x_min), high=torch.min(inputs + args.epsilon, x_max))
+        #        inputs_pert = inputs_dist.sample().to(device)
+        #    if args.noise == 'gaussian':
+        #        var = args.epsilon * args.epsilon
+        #        inputs_pert = torch.tensor(random_noise(inputs, mode='gaussian', mean=0, var=var, clip=True))
+        #    if args.noise == 'uniform-l2':  # http://extremelearning.com.au/how-to-generate-uniformly-random-points-on-n-spheres-and-n-balls/
+        #        for img in enumerate(inputs):
+        #            d = 32 * 32 * 3  # number of dimensions of CIFAR-10 image
+        #            u = np.random.normal(0, 1, size=(3, 32, 32))  # an array of d normally distributed random variables
+        #            norm = np.sum(u ** 2) ** (0.5)  # norm gaussian samples onto sphere
+        #            r = np.random(0, 1) ** (1.0 / d)  # d-th root to distribute samples from the sphere into the epsilon-size L2-norm-ball
+        #            noise = args.epsilon * r * u / norm
+        #            inputs_pert = img + noise
+        #    else:
+        #        print('Unknown type of noise')
+        #else:
+        inputs_pert = inputs
 
+        inputs_pert, targets = inputs_pert.to(device, dtype=torch.float), targets.to(device)
         targets_pert = targets
         targets_pert_pred = net(inputs_pert)
         
@@ -104,7 +132,6 @@ def test(pbar):
 if __name__ == '__main__':
     # Load and transform data
     print('Preparing data..')
-    #training data are transformed with random crops and random horizontal flips
     transform_train = transforms.Compose([
         transforms.RandomCrop(32, padding=4),
         transforms.RandomHorizontalFlip(),
@@ -118,10 +145,10 @@ if __name__ == '__main__':
     ])
 
     trainset = torchvision.datasets.CIFAR10(root='./experiments/data', train=True, download=True, transform=transform_train)
-    trainloader = torch.utils.data.DataLoader(trainset, batch_size=32, shuffle=True)
+    trainloader = torch.utils.data.DataLoader(trainset, batch_size=32, shuffle=True)    #, num_workers=2)
 
     testset = torchvision.datasets.CIFAR10(root='./experiments/data', train=False, download=True, transform=transform_test)
-    testloader = torch.utils.data.DataLoader(testset, batch_size=10, shuffle=False)
+    testloader = torch.utils.data.DataLoader(testset, batch_size=10, shuffle=False) #, num_workers=2)
 
     # Construct model
     print('\nBuilding model..')
@@ -134,7 +161,7 @@ if __name__ == '__main__':
     if args.resume:
         # Load checkpoint.
         print('\nResuming from checkpoint..')
-        checkpoint = torch.load(f'./experiments/models/cifar_epsilon_{args.epsilon}_run_{args.run}.pth')
+        checkpoint = torch.load(f'./experiments/models/{args.noise}/cifar_epsilon_{args.epsilon}_run_{args.run}.pth')
             
         net.load_state_dict(checkpoint['net'])
         start_epoch = checkpoint['epoch'] + 1
@@ -158,4 +185,4 @@ if __name__ == '__main__':
             'train_acc': train_acc,
             'epoch': start_epoch+args.epochs-1,
         }  
-        torch.save(state, f'./experiments/models/cifar_epsilon_{args.epsilon}_run_{args.run}.pth')
+        torch.save(state, f'./experiments/models/{args.noise}/cifar_epsilon_{args.epsilon}_run_{args.run}.pth')

@@ -7,13 +7,13 @@ import torchvision.transforms as transforms
 from sklearn.neighbors import NearestNeighbors
 from joblib import Parallel, delayed
 import numpy as np
+import pandas as pd
 import time
 import matplotlib.pyplot as plt
 import os
-
 # calculate r-separation distance of dataset
 def get_nearest_oppo_dist(norm):
-    
+
     transform_train = transforms.Compose([
         transforms.ToTensor()
         # transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
@@ -22,14 +22,12 @@ def get_nearest_oppo_dist(norm):
         transforms.ToTensor()
         # transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
     ])
-    
-    #load CIFAR10 dataset
+
     trainset = torchvision.datasets.CIFAR10(root='./experiments/data', train=True, download=True, transform=transform_train)
     trainloader = torch.utils.data.DataLoader(trainset, batch_size=len(trainset), shuffle=False)
     testset = torchvision.datasets.CIFAR10(root='./experiments/data', train=False, download=True, transform=transform_test)
     testloader = torch.utils.data.DataLoader(testset, batch_size=len(testset), shuffle=False)
 
-    #this function reshapes the dataset dimensions so all input parameters of the datapoints are a list for every point, not multi-dimensional
     for helper_id, (inputs, targets) in enumerate(trainloader):
         train_x = inputs
         train_y = targets
@@ -41,9 +39,7 @@ def get_nearest_oppo_dist(norm):
         test_y = targets
         if len(test_x.shape) > 2:
             test_x = test_x.reshape(len(test_x), -1)
-            
     print("Data loading done for distance evaluation")
-    #Fits a One-nearest-neighbour-model for the train dataset and the test dataset, where model data is only the data points that do not feature label "yi"
     def helper_train(yi):
         return NearestNeighbors(n_neighbors=1,
                                 metric='minkowski', p=norm, n_jobs=-1).fit(train_x[train_y != yi])
@@ -53,10 +49,7 @@ def get_nearest_oppo_dist(norm):
         return NearestNeighbors(n_neighbors=1,
                                 metric='minkowski', p=norm, n_jobs=-1).fit(test_x[test_y != yi])
     nns_test = Parallel(n_jobs=10)(delayed(helper_test)(yi) for yi in np.unique(test_y))
-    
-    #evaluate minimal distances of training data points to training data points of different classes (traintrain_ret),
-    #training data points to test data points of different classes (traintest_ret) and
-    #test data points to test data points of different classes (testtest_ret),
+
     traintrain_ret = np.zeros(len(train_x))
     traintest_ret = np.zeros(len(test_x))
     testtest_ret = np.zeros(len(test_x))
@@ -66,7 +59,7 @@ def get_nearest_oppo_dist(norm):
         traintrain_ret[np.where(train_y == yi)[0]] = dist[:, 0]
         if yi == 0:
             time1 = time.perf_counter()
-            print("First Train Train done after ", (time1 - time0), "seconds. Distance calculation time estimation: ", (time1 - time0)*12.5, "seconds.")
+            print("First Train Train evaluation done after ", (time1 - time0), "seconds. Distance calculation time estimation: ", (time1 - time0)*12.5, "seconds.")
     for yi in np.unique(train_y):
         dist, _ = nns_train[yi].kneighbors(test_x[test_y == yi], n_neighbors=1)
         traintest_ret[np.where(test_y == yi)[0]] = dist[:, 0]
@@ -79,15 +72,26 @@ def get_nearest_oppo_dist(norm):
 
     return traintrain_ret, traintest_ret, testtest_ret
 
-
-dist = np.inf #1, 2, np.inf
+#go one folder up to use the same path for loading CIFAR-10 then when executing run_exp.py
+#os.chdir('..')
+#calling function above, saving distances sorted by value to csv file, visualizing min. distances as histogram
+dist = 2 #1, 2, np.inf
 traintrain_ret, traintest_ret, testtest_ret = get_nearest_oppo_dist(dist)
-traintrain = np.sort(traintrain_ret)
-np.savetxt('./results/traintrain-separation.csv', traintrain, fmt='%1.4f', delimiter=';')
 
-#Visualize a histogram of the minimal distances to a different class for all points
+traintrain = np.sort(traintrain_ret)
 traintest = np.sort(traintest_ret)
 testtest = np.sort(testtest_ret)
+#np.savetxt('./results/traintrain-separation.csv', traintrain, fmt='%1.4f', delimiter=';')
+#np.savetxt('./results/traintest-separation.csv', traintest, fmt='%1.4f', delimiter=';')
+#np.savetxt('./results/testtest-separation.csv', testtest, fmt='%1.4f', delimiter=';')
+
+ret = np.array([[traintrain_ret.min(), traintest_ret.min(), testtest_ret.min()],
+       [traintrain_ret.mean(), traintest_ret.mean(), testtest_ret.mean()]])
+df_ret = pd.DataFrame(ret, columns=['Train-Train', 'Train-Test', 'Test-Test'], index=['Minimal Distance', 'Mean Distance'])
+print(df_ret)
+epsilon_min = ret[0, :].min()/2
+print("Epsilon: ", epsilon_min)
+
 y1 = np.arange(len(traintrain_ret)) / len(traintrain_ret)
 y2 = np.arange(len(traintest_ret)) / len(traintest_ret)
 y3 = np.arange(len(testtest_ret)) / len(testtest_ret)
@@ -108,7 +112,7 @@ axs[2,0].set_title("Test-Test Separation Distribution")
 axs[0,1].set_title("Train-Train Separation CDF")
 axs[1,1].set_title("Train-Test Separation CDF")
 axs[2,1].set_title("Test-Test Separation CDF")
-fig.savefig(r"results/r-distance-distribution.svg", dpi=300)
+#fig.savefig(r"results/r-distance-distribution.svg", dpi=300)
 
 fig2 = plt.figure(figsize=[5,3.5], dpi=300)
 fig2, axs2 = plt.subplots(1, 1, sharex='col', tight_layout=True)
@@ -119,4 +123,4 @@ plt.xlabel("Distance (Linf)")
 plt.ylabel("Frequency of points")
 axs2.set_title("Train-Train Separation Distribution")
 #axs2[1].set_title("Train-Train Separation CDF")
-fig2.savefig(r"results/r-distance-distribution2.svg", dpi=300)
+#fig2.savefig(r"results/r-distance-distribution2.svg", dpi=300)
