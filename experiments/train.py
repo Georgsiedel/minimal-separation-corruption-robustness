@@ -6,7 +6,7 @@ import argparse
 from tqdm import tqdm
 from skimage.util import random_noise
 import numpy as np
-import os
+import re
 import torch
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 import torch.nn as nn
@@ -50,15 +50,16 @@ def train(pbar):
             elif args.noise == 'gaussian':
                 var = args.epsilon * args.epsilon
                 inputs_pert = torch.tensor(random_noise(inputs, mode='gaussian', mean=0, var=var, clip=True))
-            elif args.noise == 'uniform-l2': #http://extremelearning.com.au/how-to-generate-uniformly-random-points-on-n-spheres-and-n-balls/
+            elif 'uniform-l' in args.noise: #Calafiore1998: Uniform Sample Generation in lp Balls for Probabilistic Robustness Analysis
                 inputs_pert = inputs
                 for id, img in enumerate(inputs):
                     d = 32*32*3 # number of dimensions of CIFAR-10 image
-                    u = np.random.normal(0, 1, size=(3, 32, 32))  #an array of d normally distributed random variables
-                    norm = np.sum(u ** 2) ** (0.5) #norm gaussian samples onto sphere
-                    r = np.random.random() ** (1.0 / d) #d-th root to distribute samples from the sphere into the epsilon-size L2-norm-ball
-                    corr = args.epsilon * r * u / norm
-                    noisy_img = img + corr
+                    lp = [int(x) for x in re.findall(r'-?\d+\.?\d*', args.noise)] #extract Lp-number from args.noise variable
+                    u = np.random.laplace(0, 1/lp, size=(3, 32, 32))  #array of d image-sized Laplace-distributed random variables (distribution beta factor equalling Lp-norm)
+                    norm = np.sum(abs(u)**lp)**(1/lp) #scalar, norm samples to lp-norm-sphere
+                    r = np.random.random() ** (1.0 / d) #scalar, d-th root to distribute samples from the sphere into the epsilon-size Lp-norm-ball
+                    corr = args.epsilon * r * u / norm #, image-sized corruption, epsilon * random radius * random array / normed
+                    noisy_img = img + corr #construct corrupted image by adding sampled noise
                     inputs_pert[id] = np.ma.clip(noisy_img, 0, 1) #clip values below 0 and over 1
             else:
                 print('Unknown type of noise')
