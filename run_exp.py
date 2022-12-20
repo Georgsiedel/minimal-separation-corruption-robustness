@@ -1,3 +1,6 @@
+# Training and Evaluation Code and Network architecture inspired/adopted from https://github.com/wangben88/statistically-robust-nn-classification
+# and https://github.com/yangarbiter/robust-local-lipschitz
+
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -7,11 +10,11 @@ os.chdir('C:\\Users\\Admin\\Desktop\\Python\\MSCR')
 
 import numpy as np
 import matplotlib.pyplot as plt
+import pandas as pd
 from experiments.eval import eval_metric
 
-#import pandas as pd
-#from experiments.distance import get_nearest_oppo_dist
 #calculate minimal distance of points from different classes
+#from experiments.distance import get_nearest_oppo_dist
 #dist = np.inf #1, 2, np.inf
 #traintrain_ret, traintest_ret, testtest_ret = get_nearest_oppo_dist(dist)
 #ret = np.array([[traintrain_ret.min(), traintest_ret.min(), testtest_ret.min()], [traintrain_ret.mean(), traintest_ret.mean(), testtest_ret.mean()]])
@@ -21,9 +24,12 @@ from experiments.eval import eval_metric
 #print("Epsilon: ", epsi lon_min)
 epsilon_min = 0.10588236153125763 #CIFAR-10 epsilon_min_Linf value is 0.10588236153125763, epsilon_min_L2 is 1.3753206729888916 and epsilon_min_L1 is 32.93333053588867.
 
-noise_type = 'uniform-linf' #define noise type: 'gaussian', 'uniform-l2', 'uniform-linf'
-if noise_type not in ['gaussian', 'uniform-l2', 'uniform-linf']:
-    sys.exit('Unknown type of noise')
+noise_type = 'gaussian' #define noise type: 'gaussian', 'uniform-linf', 'uniform-l1', 'uniform-l2', all positive natural numbers above 0 possible
+if noise_type not in ['gaussian', 'uniform-linf']:
+    if noise_type == 'uniform-l0':
+        sys.exit('l0 noise not implemented')
+    if 'uniform-l' not in noise_type:
+        sys.exit('Unknown type of noise')
 
 #select max.-distance of random perturbations for model training and evaluation
 #For uniform distributions, epsilon is the maximum noise distance.
@@ -31,16 +37,36 @@ if noise_type not in ['gaussian', 'uniform-l2', 'uniform-linf']:
 #For intuition: For L2, epsilon = 0,217 corresponds to either 1/255 color change for every channel and every pixel
 #or a 55/255 color change on one pixel (or something in between according to euclidian distance)
 #For 'gaussian', it is the standard deviation of the noise distribution (converted to variance in train.py)
-model_epsilons = [0.0, 0.005, 0.01, 0.015, 0.02]
-eval_epsilons = [0.0, 0.005, 0.01, 0.015, 0.02, 0.03, 0.10588236153125763]
+model_epsilons = [0.05]
+eval_epsilons = [0.0, 0.0025, 0.005, 0.01, 0.015, 0.02, 0.03, 0.05]
 model_epsilons_str = ', '.join(map(str, model_epsilons))
 eval_epsilons_str = ', '.join(map(str, eval_epsilons))
-runs = 50
+runs = 100
 
 # Train network on CIFAR-10 for natural training, two versions of corruption training, and PGD adversarial training.
 # Progressively smaller learning rates are used over training
 print('Beginning training of Wide ResNet networks on CIFAR-10')
-for run in range(0, 50):
+for run in range(0, 60):
+    print("Training run #", run)
+    for train_epsilon in model_epsilons:
+        print("Corruption training epsilon: ", train_epsilon)
+        cmd0 = 'python experiments/train.py --noise={} --epsilon={} --epochs=20 --lr=0.01 --run={}'.format(
+            noise_type, train_epsilon, run)
+        cmd1 = 'python experiments/train.py --resume --noise={} --epsilon={} --epochs=5 --lr=0.002 --run={}'.format(
+            noise_type, train_epsilon, run)
+        cmd2 = 'python experiments/train.py --resume --noise={} --epsilon={} --epochs=5 --lr=0.0004 --run={}'.format(
+            noise_type, train_epsilon, run)
+        os.system(cmd0)
+        os.system(cmd1)
+        os.system(cmd2)
+
+model_epsilons = [0.0, 0.0025, 0.005, 0.01, 0.015, 0.02, 0.03, 0.05]
+eval_epsilons = [0.0, 0.0025, 0.005, 0.01, 0.015, 0.02, 0.03, 0.05]
+model_epsilons_str = ', '.join(map(str, model_epsilons))
+eval_epsilons_str = ', '.join(map(str, eval_epsilons))
+
+print('Beginning training of Wide ResNet networks on CIFAR-10')
+for run in range(60, 100):
     print("Training run #", run)
     for train_epsilon in model_epsilons:
         print("Corruption training epsilon: ", train_epsilon)
