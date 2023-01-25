@@ -1,0 +1,3 @@
+# Networks trained with corruptions (epsilon = 0.1) along columns THEN evaluated on training set using A-TRSM (epsilon = 0.0, 0.1)  along rows
+88.97
+92.42
