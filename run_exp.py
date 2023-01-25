@@ -24,7 +24,7 @@ epsilon_min = ret[0, :].min()/2
 print("Epsilon: ", epsi lon_min)
 #epsilon_min = 0.10588236153125763 #CIFAR-10 epsilon_min_Linf value is 0.10588236153125763, epsilon_min_L2 is 1.3753206729888916 and epsilon_min_L1 is 32.93333053588867.
 
-noise_type = 'gaussian' #define noise type: 'gaussian', 'uniform-linf', 'uniform-l1', 'uniform-l2', all positive natural numbers above 0 possible
+noise_type = 'uniform-linf' #define noise type: 'gaussian', 'uniform-linf', 'uniform-l1', 'uniform-l2', all positive natural numbers above 0 possible
 if noise_type not in ['gaussian', 'uniform-linf']:
     if noise_type == 'uniform-l0':
         sys.exit('l0 noise not implemented')
@@ -37,8 +37,8 @@ if noise_type not in ['gaussian', 'uniform-linf']:
 #For intuition: For L2, epsilon = 0,217 corresponds to either 1/255 color change for every channel and every pixel
 #or a 55/255 color change on one pixel (or something in between according to euclidian distance)
 #For 'gaussian', it is the standard deviation of the noise distribution (converted to variance in train.py)
-model_epsilons = [0.0, 0.0025, 0.005, 0.01, 0.015, 0.02, 0.03, 0.05]
-eval_epsilons = [0.0, 0.0025, 0.005, 0.01, 0.015, 0.02, 0.03, 0.05]
+model_epsilons = [0.0, 0.01, 0.02, 0.03, 0.05, 0.07, 0.10588236153125763, 0.15]
+eval_epsilons = [0.0, 0.005, 0.01, 0.015, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.1, 0.10588236153125763, 0.0125, 0.15, 0.175, 0.2]
 model_epsilons_str = ', '.join(map(str, model_epsilons))
 eval_epsilons_str = ', '.join(map(str, eval_epsilons))
 runs = 20
